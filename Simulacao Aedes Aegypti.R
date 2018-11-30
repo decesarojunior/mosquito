@@ -8,7 +8,6 @@ library(simecol)
 ##-------------------------------------------------------------------
 
 
-
 setClass("indbasedModel",
          representation(
            parms  = "list",
@@ -30,7 +29,8 @@ ibm_aedes = new("indbasedModel",
                   init = larva(init, parms)
                   init = egg(init, parms)
                   init = survive(init, parms)
-                  
+                  #we are using the opposite cycle direction (adult - pupa - larva - egg) 
+                  #because it will prevent an individual to enter two stages in a single day
                 },
                 equations = list(
                   newaedes = function(n) { 
@@ -41,8 +41,7 @@ ibm_aedes = new("indbasedModel",
                       NULL
                     }
                   },
-                  #we are using the opposite cycle direction (adult - pupa - larva - egg) 
-                  #because it will prevent an individual to enter two stages in a single day
+
                   egg = function(inds, parms){
                     with(parms,{
                       inds[inds$phase==1 & parms$water >= 10,'gdd'] <- inds[inds$phase==1 & parms$water >= 10,'gdd'] + (parms$temp-parms$bt[1])
@@ -52,12 +51,11 @@ ibm_aedes = new("indbasedModel",
                       #if water < 10mL egg age won't change
                       
                       EtL  <- which(inds$phase == 1 & inds$gdd>=parms$k[1]) #egg to larva
-                      inds$phase[EtL] = 2 #troca de phase
-                      inds$gdd[EtL] = inds$gdd[EtL] - parms$k[1] 
-                      #inds who evolved will most likely surpass the minimum gdd necessary to next phase 
-                      #in this case we need to add the excess to the next stage 
-                      
-                      inds
+                      if(length(EtL)>0) {
+                        inds$phase[EtL] = 2 #change phase
+                        inds$gdd[EtL] = inds$gdd[EtL] - parms$k[1] #inds who evolved will most likely surpass the minimum gdd necessary to next phase in this case, we need to add the excess to the next stage 
+                      }
+                      inds  #return inds
                     })},
                   larva = function(inds, parms){
                     with(parms,{
@@ -66,50 +64,40 @@ ibm_aedes = new("indbasedModel",
                       inds[inds$phase==2,'gdd'] <- inds[inds$phase==2,'gdd'] + (parms$temp-parms$bt[2])
                       
                       LtP  <- which(inds$phase == 2 & inds$gdd>=parms$k[2]) #Larva to Pupa
-                      inds$phase[LtP] = 3 #change phase
-                      inds$gdd[LtP] = inds$gdd[LtP] - parms$k[2] 
-                      #inds who evolved will most likely surpass the minimum gdd necessary to next phase 
-                      #in this case, we need to add the excess to the next stage 
-                      
+                      if(length(LtP)>0) {
+                        inds$phase[LtP] = 3 #change phase
+                        inds$gdd[LtP] = inds$gdd[LtP] - parms$k[2]  #inds who evolved will most likely surpass the minimum gdd necessary to next phase in this case, we need to add the excess to the next stage 
+
+                      }
                       inds
-                      #subset
                     })},
                   pupa = function(inds, parms){
                     with(parms,{
+                     # print(inds)
                       inds[inds$phase==3, 'age'] <- inds[inds$phase==3, 'age'] + DELTAT 
                       
                       inds[inds$phase==3,'gdd'] <- inds[inds$phase==3,'gdd'] + (parms$temp-parms$bt[3])
                       PtA  <- which(inds$phase == 3 & inds$gdd>=parms$k[3]) #Pupa to adult
-                      inds$eggs[PtA] = round(runif(inds$eggs,200,300))[PtA] 
-                      inds$phase[PtA] = 4 #change phase
-                      inds$gdd[PtA] = inds$gdd[PtA] - parms$k[3]  
-                      #inds who evolved will most likely surpass the minimum gdd necessary to next phase 
-                      #in this case we need to add the excess to the next stage 
-                       
-                      #insert a random number between 200 and 300 when the pupa is ready to become an adult
-                      # ...[PtA] returns TRUE or FALSE and indicate which individuals are ready
-                    
+                      if(length(PtA)>0) { #checks if there's any individual with phase = 3 and GDD > 465.6
+                        inds$eggs[PtA] = round(runif(inds$eggs,200,300))[PtA] 
+                        #insert a random Number between 200 and 300 when the pupa is ready to become an adult
+                        # ...[PtA] returns TRUE or FALSE and indicate which individuals are ready
+                        inds$phase[PtA] = 4 #change phase
+                        inds$gdd[PtA] = inds$gdd[PtA] - parms$k[3]  #inds who evolved will most likely surpass the minimum gdd necessary to next phase in this case, we need to add the excess to the next stage 
+                      }
                       inds
                     })},
-
-                  
-                  
                      survive  = function(inds, parms){ 
-                  #     diasphase = c(4.1, 6.6, 2.4, 12.4) # médias de dias 
-                      probmorte = c(0.383, 0.075, 0.062, 0.02) # probabilidade de morte em cada phase
-                      probmorte <- probmorte / parms$k
 
+                      eggsLive <-  subset(inds,inds$phase==1 & runif(age) > (gdd*parms$deathrate[1]))  #...
+                      larvaLive <-  subset(inds,inds$phase==2 & runif(age) > (gdd*parms$deathrate[2]))
+                      pupaLive <-  subset(inds,inds$phase==3 & runif(age) > (gdd*parms$deathrate[3]))
+                      young <- subset(inds, inds$gdd < parms$k[4])
+                      adultLive <-  subset(young,young$phase==4 & runif(age) > (gdd*parms$deathrate[4]))
                       
-                      #eggsLive <-  subset(inds[inds$phase==1,],  runif(age) > (gdd*probmorte[1]))
-                      #larvaLive <- subset(inds[inds$phase==2,],  runif(age) > (gdd*probmorte[2]))
-                      #pupaLive <-  subset(inds[inds$phase==3,],  runif(age) > (gdd*probmorte[3]))
-                      #adultLive <- subset(inds[inds$phase==4,],  runif(age) > (gdd*probmorte[4]) & gdd<parms$k[4])
-                      
-                     #inds <- rbind(eggsLive,larvaLive,pupaLive,adultLive)
-                     
-                     inds
-                  
-                },
+                      inds <- rbind(eggsLive,larvaLive,pupaLive,adultLive)
+                      inds
+                      },
                      adult = function(inds, parms){
                        with(parms,{
                          inds[inds$phase==4, 'age'] <- inds[inds$phase==4, 'age'] + DELTAT 
@@ -123,13 +111,7 @@ ibm_aedes = new("indbasedModel",
                          oviposition = round(runif(inds$eggs[have.neo],30,50))
                          inds$oviposition[have.neo] = inds$oviposition[have.neo] + 1
                          eggs = inds$eggs[have.neo]
-                         #print("oviposition ")
-                         #print(oviposition)
-                       #  print(inds)
-                         #print("**********")
-                         #print("eggs ")
-                         #print(eggs)
-                         ImmatureEggs = ifelse(length(eggs) > 0, mapply(max, (eggs - oviposition), 0), 0) #problema
+                         ImmatureEggs = ifelse(length(eggs) > 0, mapply(max, (eggs - oviposition), 0), 0) 
                          new.neo = sum(eggs - ImmatureEggs)
                          
                          inds$eggs[have.neo] <- ImmatureEggs
@@ -141,19 +123,18 @@ ibm_aedes = new("indbasedModel",
                      
                 ),parms = list(
                   maxage      = 44,       #days
-                  temp        = 50, #runif(1,25,40),       
+                  temp        = 25, #runif(1,25,40),       
                   water = 10, #runif(1,8,10),
                   bt = c(2.9, 8.6, 10.8, 3.43),
-                  k = c(305.8, 433.5, 465.6, 660) #added a new parameter (660) for the adult mosquitos 
-                  #probmorte = c(0.383, 0.075, 0.062, 0.02)
+                  k = c(305.8, 433.5, 465.6, 800), #added a new parameter (660) for the adult mosquitos 
+                  deathrate = c(0.383, 0.075, 0.062, 0.02)/ c(305.8, 433.5, 465.6, 800)
                 ),                      
-                init = data.frame(age=0, phase=4, eggs=150, gdd=0, oviposition = 0),
-                times = c(from=0, to=60, by=1),
+                init = data.frame(age= c(12, 17, 1, 14, 22, 19, 8, 20, 11, 15), phase= c(3, 4, 1, 4, 4, 4, 2, 4, 3, 4), eggs=c(0,110,0,150,0,115,0,105,0,152), 
+                                  gdd= c(444, 530, 172, 473, 749, 585, 381, 697, 439, 504), oviposition = 0),
+                times = c(from=0, to=80, by=1),
                 solver = "myiteration"
 )
-#alterar o metodo de morte - ver como resolver o problema
-#adicionar o grupo de individuos conforme o campina grande - ver porque entra no estado de pupa mesmo sendo egg
-#alterar graficos, adicionar numero de individuos em cada fase e o numero de ovos que cada adulto tem
+
 
 ##-------------------------------------------------------------------
 ## 1.3 Optionally define a user provided solver function that stores
@@ -164,17 +145,15 @@ ibm_aedes = new("indbasedModel",
 myiteration = function(y, times = NULL, func = NULL, parms = NULL,
                        animate = FALSE, ...) {
   observer = function(res) { 
-    # eggs, size, age, eggage
-   # t = length(which(res$phase==4))
-    number   = nrow(res)
-    meanphase = mean(res$phase)
-    meanage  = mean(res$age)
-    meaneggs = mean(res$eggs)
-    #print("res$eggs:")
-    #print(res$eggs)
-    #print("mean eggs:")
-    #print(meaneggs)
-    c(number=number, meanphase=meanphase, meanage=meanage, meaneggs=meaneggs)
+
+    Number   = nrow(res)
+    Meaneggs = sum(res$eggs)
+    EggsN = length(which(res$phase==1))
+    LarvaeN = length(which(res$phase==2))
+    PupaeN = length(which(res$phase==3))
+    AdultsN = length(which(res$phase==4))
+
+    c(Number=Number, Meaneggs=Meaneggs, EggsN=EggsN,LarvaeN=LarvaeN,PupaeN=PupaeN,AdultsN=AdultsN)
   }
   init              = y@init
   times             = fromtoby(y@times)
@@ -193,7 +172,6 @@ myiteration = function(y, times = NULL, func = NULL, parms = NULL,
     init = func(time, init, parms)
     res  = observer(init)
     out  = rbind(out, res)
-    #print(time)
   }
   row.names(out) = NULL
   out = cbind(times, out)
@@ -207,13 +185,15 @@ myiteration = function(y, times = NULL, func = NULL, parms = NULL,
 setMethod("plot", c("indbasedModel", "missing"), function(x, y, ...) {
   opar = par(no.readonly=TRUE)
   on.exit(par(opar))
-  par(mfrow=c(2, 2))
+  par(mfrow=c(3, 2))
   o = out(x)
   
-  plot(o$times, o$meanage,  type="l", xlab="Time", ylab="Mean age (d)")
-  plot(o$times, o$meaneggs, type="l", xlab="Time", ylab="Eggs per individual")
-  plot(o$times, o$number,   type="l", xlab="Time", ylab="Abundance")
-  plot(o$times, o$number,   type="l", xlab="Time", ylab="Abundance", log="y")
+  plot(o$times, o$Meaneggs, type="l", xlab="Time", ylab="Eggs per individual")
+  plot(o$times, o$Number,   type="l", xlab="Time", ylab="Abundance")
+  plot(o$times, o$EggsN,   type="l", xlab="Time", ylab="Number of Eggs")
+  plot(o$times, o$LarvaeN,   type="l", xlab="Time", ylab="Number of Larvae")
+  plot(o$times, o$PupaeN,   type="l", xlab="Time", ylab="Number of Pupae")
+  plot(o$times, o$AdultsN,   type="l", xlab="Time", ylab="Number of Adults")
 })
 
 ##===================================================================
